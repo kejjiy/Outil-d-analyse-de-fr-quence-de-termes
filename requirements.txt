@@ -2,3 +2,6 @@ beautifulsoup4
 lxml
 matplotlib
 streamlit
+wordcloud
+plotly
+pandas
