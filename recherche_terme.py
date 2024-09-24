@@ -83,7 +83,7 @@ def plot_term_frequency(term_frequency):
     plt.clf()
 
 def main():
-    st.title('Analyse de la Fréquence des Termes dans les PV du Conseil Constitutionnel')
+    st.title('Analyse de la Fréquence des Termes dans les PV')
     directory = st.text_input('Chemin vers le dossier des fichiers:', 'chemin/vers/vos/fichiers')
     search_query = st.text_input('Entrez le(s) terme(s) à rechercher (utilisez "/" pour "OU")', '')
     
