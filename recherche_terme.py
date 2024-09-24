@@ -2,6 +2,7 @@ import os
 import re
 import datetime
 import pandas as pd
+import unicodedata
 from bs4 import BeautifulSoup
 import matplotlib.pyplot as plt
 import streamlit as st
@@ -9,11 +10,16 @@ import streamlit as st
 import plotly.express as px
 from collections import defaultdict
 
+def normalize_text(text):
+    return unicodedata.normalize('NFC', text)
+
 def parse_file(file):
     try:
         content = file.read().decode('utf-8', errors='ignore')
+        content = normalize_text(content)
         soup = BeautifulSoup(content, 'html.parser')
         text = soup.get_text(separator=' ')
+        text = normalize_text(text)
         return text
     except Exception as e:
         print(f"Erreur lors du parsing du fichier : {e}")
@@ -57,21 +63,20 @@ def extract_date_from_pv(filename):
         return None
 
 def build_search_pattern(search_query):
-    terms = [re.escape(term.strip()) for term in search_query.split('/')]
-    pattern = r'\b(' + '|'.join(terms) + r')\b'
+    # Diviser la requête sur '/' pour gérer l'opérateur 'OU'
+    terms = [term.strip() for term in search_query.split('/')]
+    # Échapper les caractères spéciaux regex dans chaque terme
+    terms = [re.escape(term) for term in terms]
+    # Créer un motif qui correspond à chaque phrase
+    pattern = '(' + '|'.join(terms) + ')'
     return re.compile(pattern, re.IGNORECASE)
 
-def extract_context(text, match, window=8):
-    words = text.split()
-    match_word = match.group(0)
-    match_indices = [i for i, word in enumerate(words) if word.lower() == match_word.lower()]
-    contexts = []
-    for index in match_indices:
-        start = max(index - window, 0)
-        end = min(index + window + 1, len(words))
-        context = ' '.join(words[start:end])
-        contexts.append(context)
-    return contexts
+def extract_context(text, match, window=40):
+    # window est le nombre de caractères avant et après la correspondance
+    start_idx = max(match.start() - window, 0)
+    end_idx = min(match.end() + window, len(text))
+    context = text[start_idx:end_idx]
+    return context.strip()
 
 def analyze_file(file, filename, search_pattern):
     text = parse_file(file)
@@ -82,13 +87,12 @@ def analyze_file(file, filename, search_pattern):
     term_count = len(matches)
     if matches:
         for match in matches:
-            contexts = extract_context(text, match)
-            for context in contexts:
-                results.append({
-                    'pv_number': pv_number,
-                    'date': date.strftime('%d/%m/%Y') if date else '',
-                    'context': context
-                })
+            context = extract_context(text, match)
+            results.append({
+                'pv_number': pv_number,
+                'date': date.strftime('%d/%m/%Y') if date else '',
+                'context': context
+            })
     return pv_number, date, term_count, results
 
 def analyze_files_uploaded(files, search_pattern, start_date, end_date):
@@ -116,17 +120,11 @@ def plot_term_frequency_interactive(term_frequency):
     fig.update_layout(xaxis_tickangle=90)
     st.plotly_chart(fig)
 
-# Fonction générant le nuage de mots (commentée en raison de problèmes potentiels)
-# def generate_wordcloud(text):
-#     wordcloud = WordCloud(width=800, height=400).generate(text)
-#     plt.figure(figsize=(15, 7.5))
-#     plt.imshow(wordcloud, interpolation='bilinear')
-#     plt.axis('off')
-#     st.pyplot(plt.gcf())
-#     plt.clf()
-
 def display_paginated_results(results, items_per_page=10):
     total_results = len(results)
+    if total_results == 0:
+        st.write("Aucune occurrence trouvée.")
+        return
     total_pages = (total_results - 1) // items_per_page + 1
     # Utilisation de st.number_input avec key pour éviter les conflits
     page = st.number_input('Page', min_value=1, max_value=total_pages, value=1, key='page_number')
@@ -156,7 +154,7 @@ def main():
         type=['xml', 'xhtml']
     )
 
-    search_query = st.text_input('Entrez le(s) terme(s) à rechercher (utilisez "/" pour "OU")', '')
+    search_query = st.text_input('Entrez le(s) terme(s) ou phrase(s) à rechercher (utilisez "/" pour "OU")', '')
 
     # Sélection des dates
     st.sidebar.subheader('Filtres de Date')
