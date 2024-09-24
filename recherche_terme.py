@@ -40,11 +40,11 @@ def extract_date_from_pv(filename):
     dates = []
     for match in matches:
         year, month, days_str = match
-        days = days_str.split('-')
+        days = re.findall(r'\d+', days_str)
         for day in days:
             if len(day) == 0:
                 continue
-            date_str = f"{year}-{month}-{day}"
+            date_str = f"{year}-{month}-{day.zfill(2)}"
             try:
                 date = datetime.datetime.strptime(date_str, '%Y-%m-%d')
                 dates.append(date)
@@ -128,7 +128,8 @@ def plot_term_frequency_interactive(term_frequency):
 def display_paginated_results(results, items_per_page=10):
     total_results = len(results)
     total_pages = (total_results - 1) // items_per_page + 1
-    page = st.number_input('Page', min_value=1, max_value=total_pages, value=1)
+    # Utilisation de st.number_input avec key pour éviter les conflits
+    page = st.number_input('Page', min_value=1, max_value=total_pages, value=1, key='page_number')
     start = (page - 1) * items_per_page
     end = start + items_per_page
     for result in results[start:end]:
@@ -171,22 +172,31 @@ def main():
                 # Préparez les fichiers pour l'analyse
                 files = [(file, file.name) for file in uploaded_files]
                 results, term_frequency = analyze_files_uploaded(files, search_pattern, start_date, end_date)
-            if term_frequency:
-                st.subheader('Graphique de fréquence des termes par année')
-                plot_term_frequency_interactive(term_frequency)
+                # Stocker les résultats dans st.session_state
+                st.session_state['results'] = results
+                st.session_state['term_frequency'] = term_frequency
+                st.session_state['search_query'] = search_query  # Enregistrer la requête de recherche
+                st.session_state['start_date'] = start_date
+                st.session_state['end_date'] = end_date
 
-                # Section du nuage de mots (commentée)
-                # st.subheader('Nuage de mots des contextes')
-                # all_contexts = ' '.join([result['context'] for result in results])
-                # generate_wordcloud(all_contexts)
+    # Vérifier si les résultats sont dans session_state
+    if 'results' in st.session_state and 'term_frequency' in st.session_state:
+        if st.session_state['term_frequency']:
+            st.subheader('Graphique de fréquence des termes par année')
+            plot_term_frequency_interactive(st.session_state['term_frequency'])
 
-                st.subheader('Occurrences trouvées')
-                display_paginated_results(results)
+            # Section du nuage de mots (commentée)
+            # st.subheader('Nuage de mots des contextes')
+            # all_contexts = ' '.join([result['context'] for result in st.session_state['results']])
+            # generate_wordcloud(all_contexts)
 
-                st.subheader('Télécharger les résultats')
-                download_results(results)
-            else:
-                st.info('Aucune occurrence trouvée.')
+            st.subheader('Occurrences trouvées')
+            display_paginated_results(st.session_state['results'])
+
+            st.subheader('Télécharger les résultats')
+            download_results(st.session_state['results'])
+        else:
+            st.info('Aucune occurrence trouvée.')
 
 if __name__ == '__main__':
     main()
