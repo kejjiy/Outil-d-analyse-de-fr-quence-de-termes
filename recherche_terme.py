@@ -5,7 +5,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import matplotlib.pyplot as plt
 import streamlit as st
-from wordcloud import WordCloud
+# from wordcloud import WordCloud  # Commenté en raison de problèmes potentiels d'installation
 import plotly.express as px
 from collections import defaultdict
 
@@ -22,30 +22,39 @@ def parse_file(file):
 def extract_pv_number(filename):
     basename = os.path.basename(filename)
     pv_number = os.path.splitext(basename)[0]
-    # Supposons que le format est 'PV_YYYYMMDD_Identifiant'
-    parts = pv_number.split('_')
-    if len(parts) >= 2:
-        date_str = parts[1]
-        try:
-            date = datetime.datetime.strptime(date_str, '%Y%m%d')
-            pv_number = date.strftime('%d/%m/%Y')
-        except ValueError:
-            pass
+    # Retirer les préfixes 'PV' et les suffixes de version '_vX.X'
+    pv_number = re.sub(r'(_v\d+\.\d+)', '', pv_number)
+    pv_number = pv_number.replace('PV', '')
     return pv_number
 
 def extract_date_from_pv(filename):
+    import re
     basename = os.path.basename(filename)
     pv_number = os.path.splitext(basename)[0]
-    # Supposons que le format est 'PV_YYYYMMDD_Identifiant'
-    parts = pv_number.split('_')
-    if len(parts) >= 2:
-        date_str = parts[1]
-        try:
-            date = datetime.datetime.strptime(date_str, '%Y%m%d')
-            return date
-        except ValueError:
-            return None
-    return None
+    # Retirer les préfixes 'PV' et les suffixes de version '_vX.X'
+    pv_number = re.sub(r'(_v\d+\.\d+)', '', pv_number)
+    pv_number = pv_number.replace('PV', '')
+    # Extraire les dates
+    date_pattern = re.compile(r'(\d{4})-(\d{2})-([\d\-]+)')
+    matches = date_pattern.findall(pv_number)
+    dates = []
+    for match in matches:
+        year, month, days_str = match
+        days = days_str.split('-')
+        for day in days:
+            if len(day) == 0:
+                continue
+            date_str = f"{year}-{month}-{day}"
+            try:
+                date = datetime.datetime.strptime(date_str, '%Y-%m-%d')
+                dates.append(date)
+            except ValueError:
+                pass
+    if dates:
+        earliest_date = min(dates)
+        return earliest_date
+    else:
+        return None
 
 def build_search_pattern(search_query):
     terms = [re.escape(term.strip()) for term in search_query.split('/')]
@@ -107,13 +116,14 @@ def plot_term_frequency_interactive(term_frequency):
     fig.update_layout(xaxis_tickangle=90)
     st.plotly_chart(fig)
 
-def generate_wordcloud(text):
-    wordcloud = WordCloud(width=800, height=400).generate(text)
-    plt.figure(figsize=(15, 7.5))
-    plt.imshow(wordcloud, interpolation='bilinear')
-    plt.axis('off')
-    st.pyplot(plt.gcf())
-    plt.clf()
+# Fonction générant le nuage de mots (commentée en raison de problèmes potentiels)
+# def generate_wordcloud(text):
+#     wordcloud = WordCloud(width=800, height=400).generate(text)
+#     plt.figure(figsize=(15, 7.5))
+#     plt.imshow(wordcloud, interpolation='bilinear')
+#     plt.axis('off')
+#     st.pyplot(plt.gcf())
+#     plt.clf()
 
 def display_paginated_results(results, items_per_page=10):
     total_results = len(results)
@@ -165,9 +175,10 @@ def main():
                 st.subheader('Graphique de fréquence des termes par année')
                 plot_term_frequency_interactive(term_frequency)
 
-                st.subheader('Nuage de mots des contextes')
-                all_contexts = ' '.join([result['context'] for result in results])
-                generate_wordcloud(all_contexts)
+                # Section du nuage de mots (commentée)
+                # st.subheader('Nuage de mots des contextes')
+                # all_contexts = ' '.join([result['context'] for result in results])
+                # generate_wordcloud(all_contexts)
 
                 st.subheader('Occurrences trouvées')
                 display_paginated_results(results)
