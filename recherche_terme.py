@@ -145,7 +145,7 @@ def download_results(results):
     )
 
 def main():
-    st.title('Analyse de la Fréquence des Termes dans les PV du Conseil Constitutionnel')
+    st.title('Analyse de la Fréquence des Termes dans les PV')
 
     # Téléchargement des fichiers
     uploaded_files = st.file_uploader(
