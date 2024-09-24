@@ -145,7 +145,7 @@ def download_results(results):
     )
 
 def main():
-    st.title('Analyse de la Fréquence des Termes dans les PV')
+    st.title('Analyse de la Fréquence des Termes dans les PV du Conseil Constitutionnel')
 
     # Téléchargement des fichiers
     uploaded_files = st.file_uploader(
@@ -156,14 +156,40 @@ def main():
 
     search_query = st.text_input('Entrez le(s) terme(s) ou phrase(s) à rechercher (utilisez "/" pour "OU")', '')
 
-    # Sélection des dates
+    # Définir les dates par défaut en utilisant st.session_state ou les valeurs par défaut
+    default_start_date = st.session_state.get('start_date', datetime.date(1959, 1, 1))
+    default_end_date = st.session_state.get('end_date', datetime.date.today())
+
+    # Définir les valeurs min et max pour les sélecteurs de date
+    min_date = datetime.date(1959, 1, 1)
+    max_date = datetime.date.today()
+
+    # Sélection des dates avec min_value et max_value
     st.sidebar.subheader('Filtres de Date')
-    start_date = st.sidebar.date_input('Date de début', value=datetime.date(1959, 1, 1))
-    end_date = st.sidebar.date_input('Date de fin', value=datetime.date.today())
+    start_date = st.sidebar.date_input(
+        'Date de début',
+        value=default_start_date,
+        min_value=min_date,
+        max_value=max_date,
+        key='start_date_input'
+    )
+    end_date = st.sidebar.date_input(
+        'Date de fin',
+        value=default_end_date,
+        min_value=min_date,
+        max_value=max_date,
+        key='end_date_input'
+    )
+
+    # Vérifier que la date de fin est supérieure ou égale à la date de début
+    if start_date > end_date:
+        st.sidebar.error('La date de début doit être antérieure ou égale à la date de fin.')
 
     if st.button('Lancer l\'analyse'):
         if not uploaded_files or not search_query:
             st.error('Veuillez télécharger les fichiers et fournir les termes de recherche.')
+        elif start_date > end_date:
+            st.error('La date de début doit être antérieure ou égale à la date de fin.')
         else:
             search_pattern = build_search_pattern(search_query)
             with st.spinner('Analyse en cours...'):
