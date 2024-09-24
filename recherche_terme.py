@@ -5,15 +5,14 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-def parse_file(filepath):
+def parse_file(file):
     try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as file:
-            content = file.read()
-            soup = BeautifulSoup(content, 'html.parser')  # Utilisation du parser HTML pour plus de rapidité
-            text = soup.get_text(separator=' ')
-            return text
+        content = file.read().decode('utf-8', errors='ignore')
+        soup = BeautifulSoup(content, 'html.parser')
+        text = soup.get_text(separator=' ')
+        return text
     except Exception as e:
-        print(f"Erreur lors du parsing de {filepath}: {e}")
+        print(f"Erreur lors du parsing du fichier : {e}")
         return ''
 
 def extract_pv_number(filename):
@@ -38,9 +37,9 @@ def extract_context(text, match, window=8):
         contexts.append(context)
     return contexts
 
-def analyze_file(filepath, search_pattern):
-    text = parse_file(filepath)
-    pv_number = extract_pv_number(os.path.basename(filepath))
+def analyze_file(file, filename, search_pattern):
+    text = parse_file(file)
+    pv_number = extract_pv_number(filename)
     matches = list(search_pattern.finditer(text))
     results = []
     term_count = len(matches)
@@ -54,19 +53,13 @@ def analyze_file(filepath, search_pattern):
                 })
     return pv_number, term_count, results
 
-def analyze_files_parallel(directory, search_pattern):
+def analyze_files_uploaded(files, search_pattern):
     results = []
     term_frequency = {}
-    filepaths = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.xml') or f.endswith('.xhtml')]
-    with ProcessPoolExecutor() as executor:
-        future_to_file = {executor.submit(analyze_file, filepath, search_pattern): filepath for filepath in filepaths}
-        for future in as_completed(future_to_file):
-            try:
-                pv_number, term_count, file_results = future.result()
-                term_frequency[pv_number] = term_count
-                results.extend(file_results)
-            except Exception as e:
-                print(f"Erreur lors de l'analyse du fichier : {e}")
+    for file, filename in files:
+        pv_number, term_count, file_results = analyze_file(file, filename, search_pattern)
+        term_frequency[pv_number] = term_count
+        results.extend(file_results)
     return results, term_frequency
 
 def plot_term_frequency(term_frequency):
@@ -83,17 +76,26 @@ def plot_term_frequency(term_frequency):
     plt.clf()
 
 def main():
-    st.title('Analyse de la Fréquence des Termes dans les PV')
-    directory = st.text_input('Chemin vers le dossier des fichiers:', 'chemin/vers/vos/fichiers')
+    st.title('Analyse de la Fréquence des Termes dans les PV du Conseil Constitutionnel')
+
+    # Modification ici : utilisation de st.file_uploader
+    uploaded_files = st.file_uploader(
+        "Téléchargez les fichiers XML/XHTML",
+        accept_multiple_files=True,
+        type=['xml', 'xhtml']
+    )
+
     search_query = st.text_input('Entrez le(s) terme(s) à rechercher (utilisez "/" pour "OU")', '')
-    
+
     if st.button('Lancer l\'analyse'):
-        if not directory or not search_query:
-            st.error('Veuillez fournir le chemin du dossier et les termes de recherche.')
+        if not uploaded_files or not search_query:
+            st.error('Veuillez télécharger les fichiers et fournir les termes de recherche.')
         else:
             search_pattern = build_search_pattern(search_query)
             with st.spinner('Analyse en cours...'):
-                results, term_frequency = analyze_files_parallel(directory, search_pattern)
+                # Préparez les fichiers pour l'analyse
+                files = [(file, file.name) for file in uploaded_files]
+                results, term_frequency = analyze_files_uploaded(files, search_pattern)
             if term_frequency:
                 st.subheader('Graphique de fréquence des termes')
                 plot_term_frequency(term_frequency)
