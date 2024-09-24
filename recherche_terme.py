@@ -1,9 +1,13 @@
 import os
 import re
+import datetime
+import pandas as pd
 from bs4 import BeautifulSoup
 import matplotlib.pyplot as plt
 import streamlit as st
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from wordcloud import WordCloud
+import plotly.express as px
+from collections import defaultdict
 
 def parse_file(file):
     try:
@@ -18,7 +22,30 @@ def parse_file(file):
 def extract_pv_number(filename):
     basename = os.path.basename(filename)
     pv_number = os.path.splitext(basename)[0]
+    # Supposons que le format est 'PV_YYYYMMDD_Identifiant'
+    parts = pv_number.split('_')
+    if len(parts) >= 2:
+        date_str = parts[1]
+        try:
+            date = datetime.datetime.strptime(date_str, '%Y%m%d')
+            pv_number = date.strftime('%d/%m/%Y')
+        except ValueError:
+            pass
     return pv_number
+
+def extract_date_from_pv(filename):
+    basename = os.path.basename(filename)
+    pv_number = os.path.splitext(basename)[0]
+    # Supposons que le format est 'PV_YYYYMMDD_Identifiant'
+    parts = pv_number.split('_')
+    if len(parts) >= 2:
+        date_str = parts[1]
+        try:
+            date = datetime.datetime.strptime(date_str, '%Y%m%d')
+            return date
+        except ValueError:
+            return None
+    return None
 
 def build_search_pattern(search_query):
     terms = [re.escape(term.strip()) for term in search_query.split('/')]
@@ -40,6 +67,7 @@ def extract_context(text, match, window=8):
 def analyze_file(file, filename, search_pattern):
     text = parse_file(file)
     pv_number = extract_pv_number(filename)
+    date = extract_date_from_pv(filename)
     matches = list(search_pattern.finditer(text))
     results = []
     term_count = len(matches)
@@ -49,36 +77,68 @@ def analyze_file(file, filename, search_pattern):
             for context in contexts:
                 results.append({
                     'pv_number': pv_number,
+                    'date': date.strftime('%d/%m/%Y') if date else '',
                     'context': context
                 })
-    return pv_number, term_count, results
+    return pv_number, date, term_count, results
 
-def analyze_files_uploaded(files, search_pattern):
+def analyze_files_uploaded(files, search_pattern, start_date, end_date):
     results = []
-    term_frequency = {}
+    term_frequency = defaultdict(int)
     for file, filename in files:
-        pv_number, term_count, file_results = analyze_file(file, filename, search_pattern)
-        term_frequency[pv_number] = term_count
+        date = extract_date_from_pv(filename)
+        if date is None or not (start_date <= date.date() <= end_date):
+            continue  # Ignorer les fichiers en dehors de la plage de dates
+        pv_number = date.strftime('%d/%m/%Y')
+        pv_number, date, term_count, file_results = analyze_file(file, filename, search_pattern)
+        term_frequency[date.strftime('%Y')] += term_count  # Regroupement par année
         results.extend(file_results)
     return results, term_frequency
 
-def plot_term_frequency(term_frequency):
-    pv_numbers = sorted(term_frequency.keys())
-    frequencies = [term_frequency[pv] for pv in pv_numbers]
-    plt.figure(figsize=(10, 5))
-    plt.plot(pv_numbers, frequencies, marker='o')
-    plt.xlabel('Numéro du PV')
-    plt.ylabel('Nombre d\'occurrences')
-    plt.title('Fréquence des termes au fil du temps')
-    plt.xticks(rotation=90)
-    plt.tight_layout()
+def plot_term_frequency_interactive(term_frequency):
+    years = sorted(term_frequency.keys())
+    frequencies = [term_frequency[year] for year in years]
+    fig = px.bar(
+        x=years,
+        y=frequencies,
+        labels={'x': 'Année', 'y': 'Nombre d\'occurrences'},
+        title='Fréquence des termes par année'
+    )
+    fig.update_layout(xaxis_tickangle=90)
+    st.plotly_chart(fig)
+
+def generate_wordcloud(text):
+    wordcloud = WordCloud(width=800, height=400).generate(text)
+    plt.figure(figsize=(15, 7.5))
+    plt.imshow(wordcloud, interpolation='bilinear')
+    plt.axis('off')
     st.pyplot(plt.gcf())
     plt.clf()
+
+def display_paginated_results(results, items_per_page=10):
+    total_results = len(results)
+    total_pages = (total_results - 1) // items_per_page + 1
+    page = st.number_input('Page', min_value=1, max_value=total_pages, value=1)
+    start = (page - 1) * items_per_page
+    end = start + items_per_page
+    for result in results[start:end]:
+        st.write(f"**PV {result['pv_number']}** ({result['date']}): {result['context']}")
+    st.write(f"Page {page} sur {total_pages}")
+
+def download_results(results):
+    df = pd.DataFrame(results)
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Télécharger les résultats en CSV",
+        data=csv,
+        file_name='resultats_analyse.csv',
+        mime='text/csv',
+    )
 
 def main():
     st.title('Analyse de la Fréquence des Termes dans les PV du Conseil Constitutionnel')
 
-    # Modification ici : utilisation de st.file_uploader
+    # Téléchargement des fichiers
     uploaded_files = st.file_uploader(
         "Téléchargez les fichiers XML/XHTML",
         accept_multiple_files=True,
@@ -86,6 +146,11 @@ def main():
     )
 
     search_query = st.text_input('Entrez le(s) terme(s) à rechercher (utilisez "/" pour "OU")', '')
+
+    # Sélection des dates
+    st.sidebar.subheader('Filtres de Date')
+    start_date = st.sidebar.date_input('Date de début', value=datetime.date(1959, 1, 1))
+    end_date = st.sidebar.date_input('Date de fin', value=datetime.date.today())
 
     if st.button('Lancer l\'analyse'):
         if not uploaded_files or not search_query:
@@ -95,14 +160,20 @@ def main():
             with st.spinner('Analyse en cours...'):
                 # Préparez les fichiers pour l'analyse
                 files = [(file, file.name) for file in uploaded_files]
-                results, term_frequency = analyze_files_uploaded(files, search_pattern)
+                results, term_frequency = analyze_files_uploaded(files, search_pattern, start_date, end_date)
             if term_frequency:
-                st.subheader('Graphique de fréquence des termes')
-                plot_term_frequency(term_frequency)
-                
+                st.subheader('Graphique de fréquence des termes par année')
+                plot_term_frequency_interactive(term_frequency)
+
+                st.subheader('Nuage de mots des contextes')
+                all_contexts = ' '.join([result['context'] for result in results])
+                generate_wordcloud(all_contexts)
+
                 st.subheader('Occurrences trouvées')
-                for result in results:
-                    st.write(f"**PV {result['pv_number']}**: {result['context']}")
+                display_paginated_results(results)
+
+                st.subheader('Télécharger les résultats')
+                download_results(results)
             else:
                 st.info('Aucune occurrence trouvée.')
 
