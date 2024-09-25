@@ -31,10 +31,12 @@ def extract_pv_number(filename):
     # Retirer les préfixes 'PV' et les suffixes de version '_vX.X'
     pv_number = re.sub(r'(_v\d+\.\d+)', '', pv_number)
     pv_number = pv_number.replace('PV', '')
+    pv_number = pv_number.strip()
+    if not pv_number:
+        pv_number = basename  # Utiliser le nom de fichier complet si pv_number est vide
     return pv_number
 
 def extract_date_from_pv(filename):
-    import re
     basename = os.path.basename(filename)
     pv_number = os.path.splitext(basename)[0]
     # Retirer les préfixes 'PV' et les suffixes de version '_vX.X'
@@ -90,7 +92,7 @@ def analyze_file(file, filename, search_pattern):
             context = extract_context(text, match)
             results.append({
                 'pv_number': pv_number,
-                'date': date.strftime('%d/%m/%Y') if date else '',
+                'date': date.strftime('%d/%m/%Y') if date else 'Non daté',
                 'context': context
             })
     return pv_number, date, term_count, results
@@ -100,22 +102,43 @@ def analyze_files_uploaded(files, search_pattern, start_date, end_date):
     term_frequency = defaultdict(int)
     for file, filename in files:
         date = extract_date_from_pv(filename)
-        if date is None or not (start_date <= date.date() <= end_date):
-            continue  # Ignorer les fichiers en dehors de la plage de dates
-        pv_number = date.strftime('%d/%m/%Y')
+        pv_number = extract_pv_number(filename)
+
+        # Décider si le fichier doit être inclus en fonction de la date
+        if date is not None:
+            if not (start_date <= date.date() <= end_date):
+                continue  # Ignorer les fichiers en dehors de la plage de dates
+            key = date.strftime('%Y')  # Utiliser l'année comme clé
+        else:
+            # Inclure les fichiers sans date et utiliser le nom de fichier comme clé
+            key = pv_number
+
         pv_number, date, term_count, file_results = analyze_file(file, filename, search_pattern)
-        term_frequency[date.strftime('%Y')] += term_count  # Regroupement par année
+        term_frequency[key] += term_count  # Utiliser la clé appropriée
         results.extend(file_results)
     return results, term_frequency
 
 def plot_term_frequency_interactive(term_frequency):
-    years = sorted(term_frequency.keys())
-    frequencies = [term_frequency[year] for year in years]
+    # Séparer les clés qui sont des années et celles qui sont des noms de fichiers
+    year_keys = []
+    file_keys = []
+    for key in term_frequency.keys():
+        if key.isdigit():
+            year_keys.append(key)
+        else:
+            file_keys.append(key)
+    # Trier les années numériquement
+    year_keys = sorted(year_keys)
+    # Trier les noms de fichiers alphabétiquement
+    file_keys = sorted(file_keys)
+    # Combiner les clés
+    all_keys = year_keys + file_keys
+    frequencies = [term_frequency[key] for key in all_keys]
     fig = px.bar(
-        x=years,
+        x=all_keys,
         y=frequencies,
-        labels={'x': 'Année', 'y': 'Nombre d\'occurrences'},
-        title='Fréquence des termes par année'
+        labels={'x': 'Année/Fichier', 'y': 'Nombre d\'occurrences'},
+        title='Fréquence des termes par année ou par fichier'
     )
     fig.update_layout(xaxis_tickangle=90)
     st.plotly_chart(fig)
@@ -145,7 +168,7 @@ def download_results(results):
     )
 
 def main():
-    st.title("Analyse des Occurrences de Termes Choisis dans des Fichiers XML")
+    st.title('Analyse de la Fréquence des Termes dans les PV du Conseil Constitutionnel')
 
     # Téléchargement des fichiers
     uploaded_files = st.file_uploader(
@@ -206,7 +229,7 @@ def main():
     # Vérifier si les résultats sont dans session_state
     if 'results' in st.session_state and 'term_frequency' in st.session_state:
         if st.session_state['term_frequency']:
-            st.subheader('Graphique de fréquence des termes par année')
+            st.subheader('Graphique de fréquence des termes par année ou par fichier')
             plot_term_frequency_interactive(st.session_state['term_frequency'])
 
             # Section du nuage de mots (commentée)
