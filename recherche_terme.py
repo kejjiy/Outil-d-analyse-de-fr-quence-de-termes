@@ -168,7 +168,7 @@ def download_results(results):
     )
 
 def main():
-    st.title('Analyse de la Fréquence d'Apparition de Termes dans des Fichiers XML')
+    st.title("Analyse de la Fréquence d'Apparition de Termes dans des Fichiers XML")
 
     # Téléchargement des fichiers
     uploaded_files = st.file_uploader(
